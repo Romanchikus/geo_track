@@ -1,6 +1,6 @@
 # Geo Track
 
-[Screencast]([Screencast](https://drive.google.com/file/d/FILE_ID/view))
+[Screencast](screencast.mp4)
 
 ## Run
 
