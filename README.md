@@ -1,6 +1,9 @@
 # Geo Track
 
-<video src="https://github.com/Romanchikus/geo_track/raw/main/screencast.mp4" controls width="800"></video>
+[Areas with devices inside](docs/areas.png)
+[Tracked devices on the globe](docs/globe.png)
+[Download the screencast](https://github.com/Romanchikus/geo_track/raw/main/docs/screencast.mp4)
+
 
 ## Run
 
