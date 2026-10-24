@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package telemetry;
+
+// One GPS fix. Degrees are stored as degrees * 10^7 so each coordinate is 4 bytes.
+message Telemetry {
+  uint64 device_id = 1;
+  sfixed32 latitude_e7 = 2;
+  sfixed32 longitude_e7 = 3;
+  optional uint64 timestamp_ms = 4;
+}

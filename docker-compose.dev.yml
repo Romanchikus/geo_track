@@ -1,0 +1,218 @@
+name: geo-track-dev
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql+asyncpg://geo:geo@postgres:5432/geo_track
+  RABBITMQ_URL: amqp://geo:geo@rabbitmq:5672/
+  REDIS_URL: redis://redis:6379/0
+  SESSION_SECRET: dev-session-secret
+  INTERNAL_TOKEN: dev-internal-token
+  LOG_LEVEL: INFO
+  THROUGHPUT_PLUG: "true"
+
+x-api: &api
+  build:
+    context: .
+    dockerfile: services/api/Dockerfile
+  environment:
+    <<: *api-env
+  volumes:
+    - ./services/api:/repo/services/api
+  command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload --no-access-log --backlog 16384
+  ulimits:
+    nofile:
+      soft: 65536
+      hard: 65536
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+    start_period: 10s
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: deploy/postgres/Dockerfile
+    image: geo-track-postgres:16
+    environment:
+      POSTGRES_USER: geo
+      POSTGRES_PASSWORD: geo
+      POSTGRES_DB: geo_track
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geo -d geo_track"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      <<: *api-env
+    volumes:
+      - ./services/api:/repo/services/api
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api-1:
+    <<: *api
+
+  web:
+    build:
+      context: ./services/web
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_HMR_CLIENT_PORT: "5173"
+      API_PROXY_TARGET: http://nginx
+    volumes:
+      - ./services/web:/app
+      - web-node-modules:/app/node_modules
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:5173/"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 60s
+
+  nginx:
+    image: nginx:1.27-alpine
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "8080:80"
+    volumes:
+      - ./deploy/nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/nginx/api.locations.conf:/etc/nginx/api.locations.conf:ro
+      - ./deploy/nginx/proxy-params.conf:/etc/nginx/proxy-params.conf:ro
+    depends_on:
+      api-1:
+        condition: service_healthy
+      web:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: geo
+      RABBITMQ_DEFAULT_PASS: geo
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "5672:5672"
+      - "5552:5552"
+      - "8883:8883"
+      - "15672:15672"
+    volumes:
+      - ./deploy/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./deploy/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./deploy/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./deploy/rabbitmq/certs:/etc/rabbitmq/certs:ro
+      - ./deploy/rabbitmq/entrypoint.sh:/entrypoint.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "su-exec rabbitmq rabbitmqctl list_queues name | grep -q '^telemetry$'"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  telemetry: &telemetry
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      <<: *api-env
+    volumes:
+      - ./services/api:/repo/services/api
+      - ./wire:/repo/wire
+    command: python -m app.services.telemetry.processing.broker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  telemetry-standby:
+    <<: *telemetry
+
+  script-worker:
+    build:
+      context: .
+      dockerfile: canary_tests/Dockerfile
+    environment:
+      INTERNAL_TOKEN: dev-internal-token
+      MQTT_HOST: rabbitmq
+      MQTT_PORT: "8883"
+      MQTT_USERNAME: geo
+      MQTT_PASSWORD: geo
+      MQTT_CA: /certs/ca.pem
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./canary_tests:/repo/canary_tests
+      - ./wire:/repo/wire
+      - ./deploy/rabbitmq/certs/ca.pem:/certs/ca.pem:ro
+      - canary-data:/data
+    command:
+      - python
+      - -m
+      - canary_tests.bench_devices
+      - --base-url
+      - http://nginx
+      - --loops
+      - "0"
+      - --devices
+      - "10000"
+      - --concurrency
+      - "10000"
+      - --devices-file
+      - /data/devices.pkl
+      - --positions-file
+      - /data/positions.pkl
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    depends_on:
+      nginx:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  web-node-modules:
+  canary-data:

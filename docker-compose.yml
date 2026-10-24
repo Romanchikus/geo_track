@@ -1,0 +1,155 @@
+name: geo-track-prod
+
+x-api-env: &api-env
+  DATABASE_URL: postgresql+asyncpg://geo:geo@postgres:5432/geo_track
+  RABBITMQ_URL: amqp://geo:geo@rabbitmq:5672/
+  REDIS_URL: redis://redis:6379/0
+  SESSION_SECRET: ${SESSION_SECRET:-change-me}
+  INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me}
+  LOG_LEVEL: INFO
+  THROUGHPUT_PLUG: "false"
+
+x-api: &api
+  build:
+    context: .
+    dockerfile: services/api/Dockerfile
+  environment:
+    <<: *api-env
+  command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --no-access-log
+  restart: unless-stopped
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+    redis:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
+    interval: 5s
+    timeout: 3s
+    retries: 20
+    start_period: 10s
+
+services:
+  postgres:
+    build:
+      context: .
+      dockerfile: deploy/postgres/Dockerfile
+    image: geo-track-postgres:16
+    environment:
+      POSTGRES_USER: geo
+      POSTGRES_PASSWORD: geo
+      POSTGRES_DB: geo_track
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U geo -d geo_track"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+  migrate:
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      <<: *api-env
+    command: alembic upgrade head
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api-1:
+    <<: *api
+
+  nginx:
+    build:
+      context: .
+      dockerfile: deploy/nginx/Dockerfile
+    ports:
+      - "8080:80"
+    restart: unless-stopped
+    depends_on:
+      api-1:
+        condition: service_healthy
+
+  rabbitmq:
+    image: rabbitmq:4-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: geo
+      RABBITMQ_DEFAULT_PASS: geo
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - ./deploy/rabbitmq/rabbitmq.conf:/etc/rabbitmq/rabbitmq.conf:ro
+      - ./deploy/rabbitmq/enabled_plugins:/etc/rabbitmq/enabled_plugins:ro
+      - ./deploy/rabbitmq/definitions.json:/etc/rabbitmq/definitions.json:ro
+      - ./deploy/rabbitmq/certs:/etc/rabbitmq/certs:ro
+      - ./deploy/rabbitmq/entrypoint.sh:/entrypoint.sh:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "su-exec rabbitmq rabbitmqctl list_queues name | grep -q '^telemetry$'"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  telemetry: &telemetry
+    build:
+      context: .
+      dockerfile: services/api/Dockerfile
+    environment:
+      <<: *api-env
+    command: python -m app.services.telemetry.processing.broker
+    restart: unless-stopped
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  telemetry-standby:
+    <<: *telemetry
+
+  script-worker:
+    build:
+      context: .
+      dockerfile: canary_tests/Dockerfile
+    environment:
+      INTERNAL_TOKEN: ${INTERNAL_TOKEN:-change-me}
+      MQTT_HOST: rabbitmq
+      MQTT_PORT: "8883"
+      MQTT_USERNAME: geo
+      MQTT_PASSWORD: geo
+      MQTT_CA: /certs/ca.pem
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./deploy/rabbitmq/certs/ca.pem:/certs/ca.pem:ro
+      - canary-data:/data
+    restart: unless-stopped
+    depends_on:
+      nginx:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  canary-data:

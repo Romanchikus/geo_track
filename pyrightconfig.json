@@ -1,0 +1,12 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.11",
+  "extraPaths": [".", "services/api"],
+  "executionEnvironments": [
+    {
+      "root": "services/api",
+      "extraPaths": ["."]
+    }
+  ]
+}

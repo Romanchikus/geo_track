@@ -1,0 +1,11 @@
+[project]
+name = "geo-track-canary"
+version = "0.1.0"
+description = "Load script for the geo-track API"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "aiomqtt>=2.5.1",
+    "httpx>=0.28.1",
+    "protobuf>=7.35.1,<8",
+    "redis>=5",
+]

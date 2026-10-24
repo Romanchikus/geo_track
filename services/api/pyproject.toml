@@ -1,0 +1,41 @@
+[project]
+name = "geo-track-api"
+version = "0.1.0"
+description = "Geo track API"
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    "apscheduler>=3.11.0,<4",
+    "alembic>=1.20.1",
+    "asyncpg>=0.32.0",
+    "fastapi>=0.161.0",
+    "fastapi-filters[sqlalchemy]>=0.5.0",
+    "geoalchemy2[shapely]>=0.20.0",
+    "itsdangerous>=2.2.0",
+    "protobuf>=7.35.1,<8",
+    "pydantic-settings>=2.16.1",
+    "sqlalchemy[asyncio]>=2.1.6",
+    "uvicorn[standard]>=0.54.0",
+    "redis>=5",
+    "rstream>=1.1.1",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+pythonpath = [".", ".."]
+markers = [
+    "integration: tests that need a database",
+]
+
+[dependency-groups]
+dev = [
+    "aiosqlite>=0.21.0",
+    "httpx2>=2.16.0",
+    "mypy>=2.4.0",
+    "pre-commit>=4.7.0",
+    "pytest>=9.1.1",
+    "pytest-asyncio>=1.4.0",
+    "ruff>=0.17.2",
+    "types-protobuf>=7.35.1,<8",
+]

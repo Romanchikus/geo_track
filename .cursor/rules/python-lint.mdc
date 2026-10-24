@@ -1,0 +1,20 @@
+---
+description: Lint and typecheck Python with ruff and mypy
+globs: services/api/**/*.py
+alwaysApply: false
+---
+
+# Python lint and types
+
+Config is in the root `pyproject.toml`. Hooks are in `.pre-commit-config.yaml`.
+
+- Format and lint with ruff. Typecheck with mypy.
+- Use the project interpreter: `.venv/bin/python`.
+- Before finishing a Python change, run `.venv/bin/pre-commit run --all-files` from the repo root.
+- Fix new ruff and mypy errors in the changed code. Do not silence them with a blanket ignore.
+
+```bash
+.venv/bin/ruff check --fix services/api
+.venv/bin/ruff format services/api
+.venv/bin/mypy
+```
