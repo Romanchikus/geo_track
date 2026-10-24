@@ -1,6 +1,6 @@
 # Geo Track
 
-[Screencast](screencast.mp4)
+[Screencast](https://github.com/Romanchikus/geo_track/raw/main/screencast.mp4)
 
 ## Run
 
