@@ -1,6 +1,6 @@
 # Geo Track
 
-[Screencast](https://github.com/Romanchikus/geo_track/raw/main/screencast.mp4)
+<video src="https://github.com/Romanchikus/geo_track/raw/main/screencast.mp4" controls width="800"></video>
 
 ## Run
 
