@@ -1,9 +1,13 @@
-# Geo Track
+<p align="center">
+  <img src="docs/areas.png" width="45%" alt="Areas with devices inside" />
+  <img src="docs/globe.png" width="45%" alt="Tracked devices on the globe" />
+</p>
 
-[Areas with devices inside](docs/areas.png)
-[Tracked devices on the globe](docs/globe.png)
-[Download the screencast](https://github.com/Romanchikus/geo_track/raw/main/docs/screencast.mp4)
-
+<p align="center">
+  <a href="https://github.com/Romanchikus/geo_track/raw/main/docs/screencast.mp4">
+    ▶ Watch the screencast
+  </a>
+</p>
 
 ## Run
 
